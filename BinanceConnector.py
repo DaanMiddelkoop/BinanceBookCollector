@@ -7,17 +7,17 @@ class BinanceConnector:
 
     def __init__(self):
         futures = [
-            'btcusdt',
+            # 'btcusdt',
             # 'btcusdt_220624',
             # 'ETHUSDT',
             # 'ethusdt_220624'
         ]
 
         spots = [
-            # 'BTCUSDC',
-            # 'BTCUSDT',
-            # 'ETHUSDC',
-            # 'ETHUSDT',
+            'btcusdc',
+            'btcusdt',
+            'ethusdc',
+            'ethusdt',
         ]
 
         self.book_managers = [

@@ -27,8 +27,11 @@ class Orderbook:
         async with websockets.connect(path) as websocket:
             while True:
                 message = json.loads(await websocket.recv())
-                print("ws update")
-                await self.handleWs(message['data'])
+                print("ws update", self.symbol, message)
+                if 'data' in message:
+                    await self.handleWs(message['data'])
+                else:
+                    await self.handleWs(message)
 
     async def handleWs(self, update):
         assert update['e'] == 'depthUpdate'
@@ -36,12 +39,13 @@ class Orderbook:
 
     async def handleQueue(self, data):
         if self.firstMessageProcessed:
-            if data['pu'] != self.lastU:
+            if ('pu' in data and data['pu'] != self.lastU) or ('pu' not in data and data['U'] != self.lastU + 1):
                 self.bids = None
                 self.asks = None
                 self.lastUpdateId = None
                 self.firstMessageProcessed = False
                 self.lastU = None
+                print("RESET")
                 return
             self.lastU = data['u']
         else:
@@ -67,11 +71,12 @@ class Orderbook:
                 self.asks[price] = amount
 
     async def initState(self):
-        path = self.api_path + f'/depth?symbol={self.symbol}&limit=1000'
-        print("Getting initial state")
+        path = self.api_path + f'/depth?symbol={self.symbol.upper()}&limit=1000'
+        print("Getting initial state", path)
         async with aiohttp.ClientSession() as session:
             async with session.get(path) as resp:
                 data = await resp.json()
+                print(data)
                 self.bids = {}
                 self.asks = {}
                 for price, amount in data['bids']:
