@@ -18,7 +18,6 @@ class Orderbook:
         self.firstMessageProcessed = False
         self.initialMessageUpdateId = None
         self.lastU = None
-        print(symbol)
 
     async def run(self):
         await asyncio.gather(self.run_ws(), self.processQueue())
@@ -28,12 +27,12 @@ class Orderbook:
         async with websockets.connect(path) as websocket:
             while True:
                 message = json.loads(await websocket.recv())
+                print("ws update")
                 await self.handleWs(message['data'])
 
     async def handleWs(self, update):
         assert update['e'] == 'depthUpdate'
         await self.queue.put(update)
-        print("Put item in queue")
 
     async def handleQueue(self, data):
         if self.firstMessageProcessed:
@@ -53,7 +52,6 @@ class Orderbook:
                 self.lastU = data['u']
                 assert data['U'] <= self.initialMessageUpdateId <= data['u']
 
-        print(data)
         for price, amount in data['b']:
             if float(amount) == 0.0:
                 if price in self.bids:
@@ -73,7 +71,6 @@ class Orderbook:
         print("Getting initial state")
         async with aiohttp.ClientSession() as session:
             async with session.get(path) as resp:
-                print(await resp.json())
                 data = await resp.json()
                 self.bids = {}
                 self.asks = {}
@@ -84,20 +81,18 @@ class Orderbook:
                     self.asks[price] = amount
 
                 self.initialMessageUpdateId = data['lastUpdateId']
-                print("Should be initialised now", self.initialMessageUpdateId, len(self.bids), len(self.asks))
 
     async def processQueue(self):
-        while True:
-            print("Loop state", self.bids is None, self.asks is None, self.initialMessageUpdateId)
-            if self.bids is not None and self.asks is not None:
-                print(self.symbol, 'bids', len(self.bids), 'asks', len(self.asks))
 
+        while True:
+            # if self.bids is not None and self.asks is not None:
+            #     print("BIDS", sorted(self.bids.items(), reverse=True, key=lambda x: float(x[0])))
+            #     print("ASKS", sorted(self.asks.items(), reverse=False, key=lambda x: float(x[0])))
             if self.bids is not None and self.asks is not None and self.initialMessageUpdateId is not None:
                 await self.handleQueue(await self.queue.get())
             else:
                 while self.queue.empty():
                     await asyncio.sleep(0.1)
-                print("Queue not empty")
                 await self.initState()
 
 

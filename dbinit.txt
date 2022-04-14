@@ -1,0 +1,19 @@
+
+
+CREATE TABLE updates (
+    id SERIAL PRIMARY KEY,
+    ts timestamp,
+    symbol text
+);
+
+CREATE TABLE bids(
+    update int,
+    price float,
+    amount float
+);
+
+CREATE TABLE asks(
+    update int,
+    price float,
+    amount float
+);

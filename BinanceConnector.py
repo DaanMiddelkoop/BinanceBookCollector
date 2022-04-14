@@ -30,3 +30,10 @@ class BinanceConnector:
     async def run(self):
         tasks = [x.run() for x in self.book_managers]
         await asyncio.gather(*tasks)
+
+    async def getOrderbooks(self):
+        books = []
+        for manager in self.book_managers:
+            for book in manager.order_books.values():
+                books.append(book)
+        return books
