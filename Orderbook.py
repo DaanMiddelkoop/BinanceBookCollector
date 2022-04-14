@@ -1,69 +1,104 @@
-import time
-from queue import Queue
-from collections import OrderedDict
+import asyncio
+from asyncio import Queue
+
+import aiohttp
+import websockets
+import json
 
 
 class Orderbook:
-    def __init__(self, symbol):
+    def __init__(self, symbol, api_path, ws_path):
+        self.api_path = api_path
+        self.ws_path = ws_path
         self.symbol = symbol
-        self.latest_update = None
-        self.last_update_id = None
-        self.a = None
-        self.b = None
-        self.last_u = None
-        self.buffer = Queue()
+        self.bids = None
+        self.asks = None
+        self.queue = Queue()
+        self.lastUpdateId = None
+        self.firstMessageProcessed = False
+        self.initialMessageUpdateId = None
+        self.lastU = None
+        print(symbol)
 
-    def update(self, message):
-        self.buffer.put(message)
+    async def run(self):
+        await asyncio.gather(self.run_ws(), self.processQueue())
 
-        if not self.validState():
-            return
+    async def run_ws(self):
+        path = self.ws_path + self.symbol + '@depth'
+        async with websockets.connect(path) as websocket:
+            while True:
+                message = json.loads(await websocket.recv())
+                await self.handleWs(message['data'])
 
-        while not self.buffer.empty():
-            data = self.buffer.get()['data']
+    async def handleWs(self, update):
+        assert update['e'] == 'depthUpdate'
+        await self.queue.put(update)
+        print("Put item in queue")
 
-            # Drop any event where u is < lastUpdateId in the snapshot.
-            if data['u'] < self.last_update_id:
-                continue
-
-            # The first processed event should have U <= lastUpdateId AND u >= lastUpdateId
-            if data['U'] > self.last_update_id or data['u'] < self.last_update_id:
-                continue
-
-            # While listening to the stream, each new event's pu should be equal to the previous event's u, otherwise initialize the process from step 3.
-            if data['pu'] != self.last_u:
-                self.a, self.b = None, None
-                continue
-
-            self.process_data(data)
-            self.last_u = data['u']
-
-    def process_data(self, data):
-        for bid in data['bids']:
-            if bid[1] == 0:
-                del self.b[bid[0]]
+    async def handleQueue(self, data):
+        if self.firstMessageProcessed:
+            if data['pu'] != self.lastU:
+                self.bids = None
+                self.asks = None
+                self.lastUpdateId = None
+                self.firstMessageProcessed = False
+                self.lastU = None
+                return
+            self.lastU = data['u']
+        else:
+            if data['u'] < self.initialMessageUpdateId:
+                return
             else:
-                self.b[bid[0]] = bid[1]
+                self.firstMessageProcessed = True
+                self.lastU = data['u']
+                assert data['U'] <= self.initialMessageUpdateId <= data['u']
 
-        for ask in data['asks']:
-            if ask[1] == 0:
-                del self.a[ask[0]]
+        print(data)
+        for price, amount in data['b']:
+            if float(amount) == 0.0:
+                if price in self.bids:
+                    del self.bids[price]
             else:
-                self.a[ask[0]] = ask[1]
+                self.bids[price] = amount
 
-    def set_snapshot(self, snapshot):
-        self.b = dict()
-        self.a = dict()
+        for price, amount in data['a']:
+            if float(amount) == 0.0:
+                if price in self.asks:
+                    del self.asks[price]
+            else:
+                self.asks[price] = amount
 
-        for bid in snapshot['bids']:
-            self.b[bid[0]] = bid[1]
+    async def initState(self):
+        path = self.api_path + f'/depth?symbol={self.symbol}&limit=1000'
+        print("Getting initial state")
+        async with aiohttp.ClientSession() as session:
+            async with session.get(path) as resp:
+                print(await resp.json())
+                data = await resp.json()
+                self.bids = {}
+                self.asks = {}
+                for price, amount in data['bids']:
+                    self.bids[price] = amount
 
-        for ask in snapshot['asks']:
-            self.a[ask[0]] = ask[1]
+                for price, amount in data['asks']:
+                    self.asks[price] = amount
 
-        self.last_update_id = snapshot['lastUpdateId']
+                self.initialMessageUpdateId = data['lastUpdateId']
+                print("Should be initialised now", self.initialMessageUpdateId, len(self.bids), len(self.asks))
 
-    def validState(self):
-        return self.a is not None and self.b is not None
+    async def processQueue(self):
+        while True:
+            print("Loop state", self.bids is None, self.asks is None, self.initialMessageUpdateId)
+            if self.bids is not None and self.asks is not None:
+                print(self.symbol, 'bids', len(self.bids), 'asks', len(self.asks))
+
+            if self.bids is not None and self.asks is not None and self.initialMessageUpdateId is not None:
+                await self.handleQueue(await self.queue.get())
+            else:
+                while self.queue.empty():
+                    await asyncio.sleep(0.1)
+                print("Queue not empty")
+                await self.initState()
+
 
 
