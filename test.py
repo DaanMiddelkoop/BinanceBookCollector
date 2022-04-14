@@ -28,10 +28,10 @@ def main():
     last_books = dict()
 
     def future(depth_cache):
-        last_books['f' + depth_cache.symbol] = (depth_cache.get_bids()[:10], depth_cache.get_asks()[:10])
+        last_books['f' + depth_cache.symbol] = (depth_cache.get_bids(), depth_cache.get_asks())
 
     def spot(depth_cache):
-        last_books['s' + depth_cache.symbol] = (depth_cache.get_bids()[:10], depth_cache.get_asks()[:10])
+        last_books['s' + depth_cache.symbol] = (depth_cache.get_bids(), depth_cache.get_asks())
 
     for symbol in futures:
         dcm.start_futures_depth_socket(future, symbol=symbol)
@@ -59,7 +59,7 @@ def store(current_time, symbol, bids, asks):
     bid_string = '[' + ','.join(['[' + str(x[0]) + ',' + str(x[1]) + ']' for x in bids]) + ']'
     ask_string = '[' + ','.join(['[' + str(x[0]) + ',' + str(x[1]) + ']' for x in asks]) + ']'
 
-    print(bid_string, ask_string)
+    print(current_time, symbol, len(bids), len(asks))
 
     sql = f"INSERT INTO books(time, symbol, bids ,asks) VALUES({current_time.__round__()},'{symbol}','{bid_string}', '{ask_string}')"
     cur = conn.execute(sql)
